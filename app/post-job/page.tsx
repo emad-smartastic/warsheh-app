@@ -12,15 +12,14 @@ interface Category {
   name_en: string
   name_ar: string
   icon_name: string
-  description?: string
 }
 
 export default function PostJobPage() {
   const [categories, setCategories] = useState<Category[]>([])
-  const [selectedCategoryCode, setSelectedCategoryCode] = useState('CAT-01')
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [district, setDistrict] = useState('Beirut')
+  const [district, setDistrict] = useState('Beirut (بيروت)')
   const [city, setCity] = useState('')
   const [budgetMin, setBudgetMin] = useState('')
   const [budgetMax, setBudgetMax] = useState('')
@@ -31,16 +30,17 @@ export default function PostJobPage() {
   const supabase = createClient()
   const router = useRouter()
 
-  const mainCategories = [
-    { code: 'CAT-01', name_en: 'Plumbing', name_ar: 'صحية / سنكرية', icon: '🔧' },
-    { code: 'CAT-02', name_en: 'Electrical', name_ar: 'كهرباء', icon: '⚡' },
-    { code: 'CAT-03', name_en: 'Painting', name_ar: 'طرش / دهان', icon: '🎨' },
-    { code: 'CAT-04', name_en: 'Carpentry', name_ar: 'نجارة', icon: '🪚' },
-    { code: 'CAT-05', name_en: 'Tiling', name_ar: 'بلاط / إعمار', icon: '🧱' },
-    { code: 'CAT-06', name_en: 'HVAC', name_ar: 'تبريد / أدوات منزلية', icon: '❄️' },
-    { code: 'CAT-07', name_en: 'Simple Fixes', name_ar: 'تصليحات سريعة', icon: '🔨' },
-    { code: 'CAT-08', name_en: 'Full Renovation', name_ar: 'ورشة كاملة', icon: '🏠' },
-  ]
+  // Hardcoded UI presentation details mapped by category code/name
+  const categoryIcons: Record<string, string> = {
+    'CAT-01': '🔧',
+    'CAT-02': '⚡',
+    'CAT-03': '🎨',
+    'CAT-04': '🪚',
+    'CAT-05': '🧱',
+    'CAT-06': '❄️',
+    'CAT-07': '🔨',
+    'CAT-08': '🏠',
+  }
 
   const districts = [
     'Beirut (بيروت)',
@@ -55,11 +55,13 @@ export default function PostJobPage() {
     'Byblos / Jbeil (جبيل)'
   ]
 
+  // Fetch categories from database on load
   useEffect(() => {
     async function loadCategories() {
-      const { data } = await supabase.from('categories').select('*')
+      const { data, error } = await supabase.from('categories').select('*').order('code')
       if (data && data.length > 0) {
         setCategories(data)
+        setSelectedCategoryId(data[0].id) // Select first available category by default
       }
     }
     loadCategories()
@@ -100,38 +102,29 @@ export default function PostJobPage() {
       return
     }
 
+    // Double check that we have a valid category ID
+    let finalCategoryId = selectedCategoryId
+
+    if (!finalCategoryId) {
+      // Fallback query if categories weren't loaded in state yet
+      const { data: catData } = await supabase.from('categories').select('id').limit(1).single()
+      if (catData?.id) {
+        finalCategoryId = catData.id
+      } else {
+        setError('يرجى اختيار نوع الخدمة')
+        setLoading(false)
+        return
+      }
+    }
+
     try {
-      // 1. Try matching code first
-      let targetCategoryId = categories.find(c => c.code === selectedCategoryCode)?.id
-
-      // 2. Fallback: match by Arabic or English name if codes differ in database
-      if (!targetCategoryId) {
-        const selectedObj = mainCategories.find(c => c.code === selectedCategoryCode)
-        if (selectedObj) {
-          targetCategoryId = categories.find(
-            c => c.name_ar === selectedObj.name_ar || c.name_en.toLowerCase() === selectedObj.name_en.toLowerCase()
-          )?.id
-        }
-      }
-
-      // 3. Last fallback: pick first available category in database
-      if (!targetCategoryId && categories.length > 0) {
-        targetCategoryId = categories[0].id
-      }
-
-      if (!targetCategoryId) {
-        // Query database directly if categories array was empty
-        const { data: catDb } = await supabase.from('categories').select('id').limit(1).single()
-        targetCategoryId = catDb?.id
-      }
-
       const mediaUrls = files.length > 0 ? await uploadMediaFiles(user.id) : []
 
       const { error: insertError } = await supabase
         .from('job_posts')
         .insert({
           customer_id: user.id,
-          category_id: targetCategoryId,
+          category_id: finalCategoryId,
           title: title,
           description: description,
           district: district,
@@ -164,24 +157,26 @@ export default function PostJobPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Category Selector Cards */}
           <div>
             <label className="block text-sm font-bold text-slate-900 mb-3">
               1. اختر نوع الخدمة المطلوبة / Select Trade
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {mainCategories.map((cat) => {
-                const isSelected = selectedCategoryCode === cat.code
+              {categories.map((cat) => {
+                const isSelected = selectedCategoryId === cat.id
+                const icon = categoryIcons[cat.code] || '🔨'
                 return (
                   <div
-                    key={cat.code}
-                    onClick={() => setSelectedCategoryCode(cat.code)}
+                    key={cat.id}
+                    onClick={() => setSelectedCategoryId(cat.id)}
                     className={`p-4 rounded-2xl border cursor-pointer transition text-center flex flex-col items-center justify-between ${
                       isSelected
                         ? 'border-amber-500 bg-amber-50/60 shadow-md ring-2 ring-amber-500/20'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
-                    <span className="text-3xl mb-2">{cat.icon}</span>
+                    <span className="text-3xl mb-2">{icon}</span>
                     <span className={`font-bold text-sm block ${isSelected ? 'text-amber-950' : 'text-slate-900'}`}>
                       {cat.name_ar}
                     </span>
