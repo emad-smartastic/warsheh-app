@@ -31,16 +31,15 @@ export default function PostJobPage() {
   const supabase = createClient()
   const router = useRouter()
 
-  // Hardcoded fallback taxonomy matching the main landing page
   const mainCategories = [
-    { code: 'CAT-01', name_en: 'Plumbing', name_ar: 'صحية / سنكرية', icon: '🔧', scope: 'Pipe leaks, water tanks, pumps, bathroom fittings' },
-    { code: 'CAT-02', name_en: 'Electrical', name_ar: 'كهرباء', icon: '⚡', scope: 'Circuit breakers, generator toggles, wiring, lighting' },
-    { code: 'CAT-03', name_en: 'Painting', name_ar: 'طرش / دهان', icon: '🎨', scope: 'Interior/exterior paint, moisture isolation (Nash)' },
-    { code: 'CAT-04', name_en: 'Carpentry', name_ar: 'نجارة', icon: '🪚', scope: 'Doors, custom wood, aluminum shutters (Keshkish)' },
-    { code: 'CAT-05', name_en: 'Tiling', name_ar: 'بلاط / إعمار', icon: '🧱', scope: 'Floor/wall tiling, marble polishing (Jali), masonry' },
-    { code: 'CAT-06', name_en: 'HVAC', name_ar: 'تبريد / أدوات منزلية', icon: '❄️', scope: 'AC install/cleaning (Spenkit), fridge & washer repair' },
-    { code: 'CAT-07', name_en: 'Simple Fixes', name_ar: 'تصليحات سريعة', icon: '🔨', scope: 'TV mounting, curtain hanging, lock replacement' },
-    { code: 'CAT-08', name_en: 'Full Renovation', name_ar: 'ورشة كاملة', icon: '🏠', scope: 'Turnkey renovation projects, structural masonry' },
+    { code: 'CAT-01', name_en: 'Plumbing', name_ar: 'صحية / سنكرية', icon: '🔧' },
+    { code: 'CAT-02', name_en: 'Electrical', name_ar: 'كهرباء', icon: '⚡' },
+    { code: 'CAT-03', name_en: 'Painting', name_ar: 'طرش / دهان', icon: '🎨' },
+    { code: 'CAT-04', name_en: 'Carpentry', name_ar: 'نجارة', icon: '🪚' },
+    { code: 'CAT-05', name_en: 'Tiling', name_ar: 'بلاط / إعمار', icon: '🧱' },
+    { code: 'CAT-06', name_en: 'HVAC', name_ar: 'تبريد / أدوات منزلية', icon: '❄️' },
+    { code: 'CAT-07', name_en: 'Simple Fixes', name_ar: 'تصليحات سريعة', icon: '🔨' },
+    { code: 'CAT-08', name_en: 'Full Renovation', name_ar: 'ورشة كاملة', icon: '🏠' },
   ]
 
   const districts = [
@@ -56,10 +55,9 @@ export default function PostJobPage() {
     'Byblos / Jbeil (جبيل)'
   ]
 
-  // Fetch Supabase categories & map with fallback icons
   useEffect(() => {
     async function loadCategories() {
-      const { data } = await supabase.from('categories').select('*').order('code')
+      const { data } = await supabase.from('categories').select('*')
       if (data && data.length > 0) {
         setCategories(data)
       }
@@ -103,19 +101,28 @@ export default function PostJobPage() {
     }
 
     try {
-      // Find selected category ID from Supabase or fallback
-      const matchedCat = categories.find(c => c.code === selectedCategoryCode)
-      const targetCategoryId = matchedCat ? matchedCat.id : null
+      // 1. Try matching code first
+      let targetCategoryId = categories.find(c => c.code === selectedCategoryCode)?.id
+
+      // 2. Fallback: match by Arabic or English name if codes differ in database
+      if (!targetCategoryId) {
+        const selectedObj = mainCategories.find(c => c.code === selectedCategoryCode)
+        if (selectedObj) {
+          targetCategoryId = categories.find(
+            c => c.name_ar === selectedObj.name_ar || c.name_en.toLowerCase() === selectedObj.name_en.toLowerCase()
+          )?.id
+        }
+      }
+
+      // 3. Last fallback: pick first available category in database
+      if (!targetCategoryId && categories.length > 0) {
+        targetCategoryId = categories[0].id
+      }
 
       if (!targetCategoryId) {
-        // Fallback fetch if categories array wasn't ready
-        const { data: fetchedCat } = await supabase
-          .from('categories')
-          .select('id')
-          .eq('code', selectedCategoryCode)
-          .single()
-
-        if (!fetchedCat) throw new Error('يرجى اختيار نوع الخدمة')
+        // Query database directly if categories array was empty
+        const { data: catDb } = await supabase.from('categories').select('id').limit(1).single()
+        targetCategoryId = catDb?.id
       }
 
       const mediaUrls = files.length > 0 ? await uploadMediaFiles(user.id) : []
@@ -124,7 +131,7 @@ export default function PostJobPage() {
         .from('job_posts')
         .insert({
           customer_id: user.id,
-          category_id: targetCategoryId || categories[0]?.id,
+          category_id: targetCategoryId,
           title: title,
           description: description,
           district: district,
@@ -157,7 +164,6 @@ export default function PostJobPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Visual Category Selector Matching Home Page */}
           <div>
             <label className="block text-sm font-bold text-slate-900 mb-3">
               1. اختر نوع الخدمة المطلوبة / Select Trade
@@ -188,7 +194,6 @@ export default function PostJobPage() {
             </div>
           </div>
 
-          {/* Job Title */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">2. عنوان الطلب / Job Title</label>
             <input
@@ -201,7 +206,6 @@ export default function PostJobPage() {
             />
           </div>
 
-          {/* Description */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">3. الوصف والتفاصيل / Description</label>
             <textarea
@@ -214,7 +218,6 @@ export default function PostJobPage() {
             />
           </div>
 
-          {/* Location */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">المنطقة / District</label>
@@ -241,7 +244,6 @@ export default function PostJobPage() {
             </div>
           </div>
 
-          {/* Budget Estimate */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">الميزانية المتوقعة بالدولار ($ USD)</label>
             <div className="grid grid-cols-2 gap-4">
@@ -262,7 +264,6 @@ export default function PostJobPage() {
             </div>
           </div>
 
-          {/* Attachments */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">إرفاق صور أو فيديوهات للمشكلة</label>
             <input
