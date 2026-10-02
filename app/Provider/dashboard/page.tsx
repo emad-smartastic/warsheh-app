@@ -82,7 +82,7 @@ export default function ProviderDashboard() {
         query = query.eq('category_id', selectedCategory)
       }
 
-      const { data, error } = await query
+      const { data } = await query
       if (data) setJobs(data as any)
       setLoading(false)
     }
