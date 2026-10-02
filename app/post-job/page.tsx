@@ -16,7 +16,7 @@ interface Category {
 
 export default function PostJobPage() {
   const [categories, setCategories] = useState<Category[]>([])
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('')
+  const [selectedCategoryCode, setSelectedCategoryCode] = useState('CAT-01')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [district, setDistrict] = useState('Beirut (بيروت)')
@@ -30,17 +30,17 @@ export default function PostJobPage() {
   const supabase = createClient()
   const router = useRouter()
 
-  // Hardcoded UI presentation details mapped by category code/name
-  const categoryIcons: Record<string, string> = {
-    'CAT-01': '🔧',
-    'CAT-02': '⚡',
-    'CAT-03': '🎨',
-    'CAT-04': '🪚',
-    'CAT-05': '🧱',
-    'CAT-06': '❄️',
-    'CAT-07': '🔨',
-    'CAT-08': '🏠',
-  }
+  // Default trades matching main landing page
+  const mainCategories = [
+    { code: 'CAT-01', name_en: 'Plumbing', name_ar: 'صحية / سنكرية', icon: '🔧' },
+    { code: 'CAT-02', name_en: 'Electrical', name_ar: 'كهرباء', icon: '⚡' },
+    { code: 'CAT-03', name_en: 'Painting', name_ar: 'طرش / دهان', icon: '🎨' },
+    { code: 'CAT-04', name_en: 'Carpentry', name_ar: 'نجارة', icon: '🪚' },
+    { code: 'CAT-05', name_en: 'Tiling', name_ar: 'بلاط / إعمار', icon: '🧱' },
+    { code: 'CAT-06', name_en: 'HVAC', name_ar: 'تبريد / أدوات منزلية', icon: '❄️' },
+    { code: 'CAT-07', name_en: 'Simple Fixes', name_ar: 'تصليحات سريعة', icon: '🔨' },
+    { code: 'CAT-08', name_en: 'Full Renovation', name_ar: 'ورشة كاملة', icon: '🏠' },
+  ]
 
   const districts = [
     'Beirut (بيروت)',
@@ -55,13 +55,11 @@ export default function PostJobPage() {
     'Byblos / Jbeil (جبيل)'
   ]
 
-  // Fetch categories from database on load
   useEffect(() => {
     async function loadCategories() {
-      const { data, error } = await supabase.from('categories').select('*').order('code')
+      const { data } = await supabase.from('categories').select('*').order('code')
       if (data && data.length > 0) {
         setCategories(data)
-        setSelectedCategoryId(data[0].id) // Select first available category by default
       }
     }
     loadCategories()
@@ -102,29 +100,37 @@ export default function PostJobPage() {
       return
     }
 
-    // Double check that we have a valid category ID
-    let finalCategoryId = selectedCategoryId
-
-    if (!finalCategoryId) {
-      // Fallback query if categories weren't loaded in state yet
-      const { data: catData } = await supabase.from('categories').select('id').limit(1).single()
-      if (catData?.id) {
-        finalCategoryId = catData.id
-      } else {
-        setError('يرجى اختيار نوع الخدمة')
-        setLoading(false)
-        return
-      }
-    }
-
     try {
+      // Find matching category ID from state or query directly
+      let targetCategoryId = categories.find(c => c.code === selectedCategoryCode)?.id
+
+      if (!targetCategoryId) {
+        const { data: catDb } = await supabase
+          .from('categories')
+          .select('id')
+          .eq('code', selectedCategoryCode)
+          .single()
+
+        targetCategoryId = catDb?.id
+      }
+
+      if (!targetCategoryId) {
+        // Fallback to first available category
+        const { data: anyCat } = await supabase.from('categories').select('id').limit(1).single()
+        targetCategoryId = anyCat?.id
+      }
+
+      if (!targetCategoryId) {
+        throw new Error('تعذر العثور على قسم الخدمة في قاعدة البيانات')
+      }
+
       const mediaUrls = files.length > 0 ? await uploadMediaFiles(user.id) : []
 
       const { error: insertError } = await supabase
         .from('job_posts')
         .insert({
           customer_id: user.id,
-          category_id: finalCategoryId,
+          category_id: targetCategoryId,
           title: title,
           description: description,
           district: district,
@@ -157,26 +163,24 @@ export default function PostJobPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Category Selector Cards */}
           <div>
             <label className="block text-sm font-bold text-slate-900 mb-3">
               1. اختر نوع الخدمة المطلوبة / Select Trade
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {categories.map((cat) => {
-                const isSelected = selectedCategoryId === cat.id
-                const icon = categoryIcons[cat.code] || '🔨'
+              {mainCategories.map((cat) => {
+                const isSelected = selectedCategoryCode === cat.code
                 return (
                   <div
-                    key={cat.id}
-                    onClick={() => setSelectedCategoryId(cat.id)}
+                    key={cat.code}
+                    onClick={() => setSelectedCategoryCode(cat.code)}
                     className={`p-4 rounded-2xl border cursor-pointer transition text-center flex flex-col items-center justify-between ${
                       isSelected
                         ? 'border-amber-500 bg-amber-50/60 shadow-md ring-2 ring-amber-500/20'
                         : 'border-slate-200 bg-white hover:border-slate-300'
                     }`}
                   >
-                    <span className="text-3xl mb-2">{icon}</span>
+                    <span className="text-3xl mb-2">{cat.icon}</span>
                     <span className={`font-bold text-sm block ${isSelected ? 'text-amber-950' : 'text-slate-900'}`}>
                       {cat.name_ar}
                     </span>
