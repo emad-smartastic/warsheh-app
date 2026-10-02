@@ -1,0 +1,257 @@
+'use client'
+
+export const dynamic = 'force-dynamic'
+
+import { useState, useEffect } from 'react'
+import { createClient } from '@/lib/supabase/client'
+import { useRouter } from 'next/navigation'
+
+interface Category {
+  id: string
+  code: string
+  name_en: string
+  name_ar: string
+  icon_name: string
+}
+
+export default function PostJobPage() {
+  const [categories, setCategories] = useState<Category[]>([])
+  const [categoryId, setCategoryId] = useState('')
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [district, setDistrict] = useState('Beirut')
+  const [city, setCity] = useState('')
+  const [budgetMin, setBudgetMin] = useState('')
+  const [budgetMax, setBudgetMax] = useState('')
+  const [files, setFiles] = useState<File[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const supabase = createClient()
+  const router = useRouter()
+
+  const districts = [
+    'Beirut (بيروت)',
+    'Metn (المتن)',
+    'Keserwan (كسروان)',
+    'Aley (عاليه)',
+    'Chouf (الشوف)',
+    'Baabda (بعبدا)',
+    'Tripoli (طرابلس)',
+    'Saida (صيدا)',
+    'Zahle (زحلة)',
+    'Byblos / Jbeil (جبيل)'
+  ]
+
+  // 1. Fetch Categories from Supabase
+  useEffect(() => {
+    async function loadCategories() {
+      const { data } = await supabase.from('categories').select('*').order('code')
+      if (data && data.length > 0) {
+        setCategories(data)
+        setCategoryId(data[0].id)
+      }
+    }
+    loadCategories()
+  }, [])
+
+  // 2. Handle File Uploads to Supabase Storage ('job-media')
+  const uploadMediaFiles = async (userId: string): Promise<string[]> => {
+    const uploadedUrls: string[] = []
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+
+      const { data, error } = await supabase.storage
+        .from('job-media')
+        .upload(fileName, file)
+
+      if (data) {
+        const { data: publicUrlData } = supabase.storage
+          .from('job-media')
+          .getPublicUrl(fileName)
+        
+        uploadedUrls.push(publicUrlData.publicUrl)
+      }
+    }
+
+    return uploadedUrls
+  }
+
+  // 3. Submit Job Request
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      router.push('/login')
+      return
+    }
+
+    try {
+      // Upload media photos if attached
+      const mediaUrls = files.length > 0 ? await uploadMediaFiles(user.id) : []
+
+      // Insert into PostgreSQL 'job_posts' table
+      const { data, error: insertError } = await supabase
+        .from('job_posts')
+        .insert({
+          customer_id: user.id,
+          category_id: categoryId,
+          title: title,
+          description: description,
+          district: district,
+          city: city || district,
+          budget_min_usd: budgetMin ? parseFloat(budgetMin) : null,
+          budget_max_usd: budgetMax ? parseFloat(budgetMax) : null,
+          media_urls: mediaUrls,
+          status: 'OPEN'
+        })
+
+      if (insertError) {
+        setError(insertError.message)
+        setLoading(false)
+        return
+      }
+
+      router.push('/customer/dashboard')
+    } catch (err: any) {
+      setError(err.message || 'حدث خطأ أثناء إضافة الطلب')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50 py-10 px-4">
+      <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-right">
+        <h1 className="text-2xl font-bold text-blue-950 mb-2">طلب معلم / إضافة ورشة جـديدة</h1>
+        <p className="text-sm text-slate-500 mb-6">أدخل تفاصيل الشغلة للتواصل مع أفضل المعلمية القريبين منك</p>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 text-center">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Service Category */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">نوع الخدمة / Service Category</label>
+            <select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+            >
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name_ar} ({cat.name_en})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Job Title */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">عنوان الطلب / Job Title</label>
+            <input
+              type="text"
+              required
+              placeholder="مثال: تصليح حنفية المطبخ / تركيب مكيف 1.5 طن"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">الوصف والتفاصيل / Description</label>
+            <textarea
+              required
+              rows={4}
+              placeholder="اشرح المشكلة بالتفصيل، مواعيد العمل المناسبة، والأغراض المتاحة عندك..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+          </div>
+
+          {/* Location */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">المنطقة / District</label>
+              <select
+                value={district}
+                onChange={(e) => setDistrict(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+              >
+                {districts.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">البلدية / المنطقة بالتحديد (اختياري)</label>
+              <input
+                type="text"
+                placeholder="مثال: الحمرا / سن الفيل"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Budget Estimate (USD) */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">الميزانية المتوقعة بالدولار ($ USD)</label>
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="number"
+                placeholder="الحد الأدنى ($ Min)"
+                value={budgetMin}
+                onChange={(e) => setBudgetMin(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+              <input
+                type="number"
+                placeholder="الحد الأقصى ($ Max)"
+                value={budgetMax}
+                onChange={(e) => setBudgetMax(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+              />
+            </div>
+          </div>
+
+          {/* Media File Uploads */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">إرفاق صور أو فيديوهات للمشكلة (Media Attachments)</label>
+            <input
+              type="file"
+              multiple
+              accept="image/*,video/*"
+              onChange={(e) => setFiles(Array.from(e.target.files || []))}
+              className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-900 hover:file:bg-blue-100"
+            />
+            {files.length > 0 && (
+              <p className="text-xs text-slate-500 mt-1">تم اختيار {files.length} ملفات</p>
+            )}
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-amber-600 text-white font-bold py-3.5 rounded-xl hover:bg-amber-500 transition disabled:opacity-50"
+          >
+            {loading ? 'جاري رفع الصور ونشر الطلب...' : 'نشر الطلب الآن (Post Job)'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
