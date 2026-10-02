@@ -29,7 +29,7 @@ export default function CustomerDashboard() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-slate-50 py-8 px-4 max-w-5xl mx-auto">
+    <div className="min-h-screen bg-slate-50 py-8 px-4 max-w-5xl mx-auto text-right">
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-2xl font-bold text-blue-950">طلباتي والورش الفعالة</h1>
         <Link
