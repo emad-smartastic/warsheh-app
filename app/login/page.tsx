@@ -14,13 +14,12 @@ export default function LoginPage() {
   const supabase = createClient()
   const router = useRouter()
 
-  // 1. Send SMS OTP to Lebanese Phone Number
+  // 1. Send SMS OTP
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
 
-    // Ensure Lebanese international country code formatting
     const formattedPhone = phone.startsWith('+') ? phone : `+961${phone.replace(/^0+/, '')}`
 
     const { error } = await supabase.auth.signInWithOtp({
@@ -34,15 +33,6 @@ export default function LoginPage() {
     }
     setLoading(false)
   }
-
-// Inside handleVerifyOtp:
-if (!profile || profile.full_name === 'New User') {
-  router.push('/onboarding')
-} else if (profile.role === 'PROVIDER') {
-  router.push('/provider/dashboard')
-} else {
-  router.push('/customer')
-}
 
   // 2. Verify 6-digit Code & Redirect
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -58,17 +48,17 @@ if (!profile || profile.full_name === 'New User') {
       type: 'sms',
     })
 
-    if (error) {
+    if (error || !data.user) {
       setError('رمز التحقق غير صحيح / Invalid OTP code')
       setLoading(false)
       return
     }
 
-    // Check if user has completed onboarding profile
+    // Fetch user profile from Supabase
     const { data: profile } = await supabase
       .from('profiles')
       .select('full_name, role')
-      .eq('id', data.user?.id)
+      .eq('id', data.user.id)
       .single()
 
     if (!profile || profile.full_name === 'New User') {
@@ -76,7 +66,7 @@ if (!profile || profile.full_name === 'New User') {
     } else if (profile.role === 'PROVIDER') {
       router.push('/provider/dashboard')
     } else {
-      router.push('/customer/dashboard')
+      router.push('/customer')
     }
   }
 
