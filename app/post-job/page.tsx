@@ -143,7 +143,7 @@ export default function PostJobPage() {
 
       if (insertError) throw insertError
 
-      router.push('/customer/dashboard')
+      router.push('/customer')
     } catch (err: any) {
       setError(err.message || 'حدث خطأ أثناء إضافة الطلب')
       setLoading(false)

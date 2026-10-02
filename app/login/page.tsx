@@ -35,6 +35,15 @@ export default function LoginPage() {
     setLoading(false)
   }
 
+// Inside handleVerifyOtp:
+if (!profile || profile.full_name === 'New User') {
+  router.push('/onboarding')
+} else if (profile.role === 'PROVIDER') {
+  router.push('/provider/dashboard')
+} else {
+  router.push('/customer')
+}
+
   // 2. Verify 6-digit Code & Redirect
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault()
