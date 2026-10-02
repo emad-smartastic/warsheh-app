@@ -12,11 +12,12 @@ interface Category {
   name_en: string
   name_ar: string
   icon_name: string
+  description?: string
 }
 
 export default function PostJobPage() {
   const [categories, setCategories] = useState<Category[]>([])
-  const [categoryId, setCategoryId] = useState('')
+  const [selectedCategoryCode, setSelectedCategoryCode] = useState('CAT-01')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [district, setDistrict] = useState('Beirut')
@@ -29,6 +30,18 @@ export default function PostJobPage() {
 
   const supabase = createClient()
   const router = useRouter()
+
+  // Hardcoded fallback taxonomy matching the main landing page
+  const mainCategories = [
+    { code: 'CAT-01', name_en: 'Plumbing', name_ar: 'صحية / سنكرية', icon: '🔧', scope: 'Pipe leaks, water tanks, pumps, bathroom fittings' },
+    { code: 'CAT-02', name_en: 'Electrical', name_ar: 'كهرباء', icon: '⚡', scope: 'Circuit breakers, generator toggles, wiring, lighting' },
+    { code: 'CAT-03', name_en: 'Painting', name_ar: 'طرش / دهان', icon: '🎨', scope: 'Interior/exterior paint, moisture isolation (Nash)' },
+    { code: 'CAT-04', name_en: 'Carpentry', name_ar: 'نجارة', icon: '🪚', scope: 'Doors, custom wood, aluminum shutters (Keshkish)' },
+    { code: 'CAT-05', name_en: 'Tiling', name_ar: 'بلاط / إعمار', icon: '🧱', scope: 'Floor/wall tiling, marble polishing (Jali), masonry' },
+    { code: 'CAT-06', name_en: 'HVAC', name_ar: 'تبريد / أدوات منزلية', icon: '❄️', scope: 'AC install/cleaning (Spenkit), fridge & washer repair' },
+    { code: 'CAT-07', name_en: 'Simple Fixes', name_ar: 'تصليحات سريعة', icon: '🔨', scope: 'TV mounting, curtain hanging, lock replacement' },
+    { code: 'CAT-08', name_en: 'Full Renovation', name_ar: 'ورشة كاملة', icon: '🏠', scope: 'Turnkey renovation projects, structural masonry' },
+  ]
 
   const districts = [
     'Beirut (بيروت)',
@@ -43,19 +56,17 @@ export default function PostJobPage() {
     'Byblos / Jbeil (جبيل)'
   ]
 
-  // 1. Fetch Categories from Supabase
+  // Fetch Supabase categories & map with fallback icons
   useEffect(() => {
     async function loadCategories() {
       const { data } = await supabase.from('categories').select('*').order('code')
       if (data && data.length > 0) {
         setCategories(data)
-        setCategoryId(data[0].id)
       }
     }
     loadCategories()
   }, [])
 
-  // 2. Handle File Uploads to Supabase Storage ('job-media')
   const uploadMediaFiles = async (userId: string): Promise<string[]> => {
     const uploadedUrls: string[] = []
 
@@ -63,7 +74,7 @@ export default function PostJobPage() {
       const fileExt = file.name.split('.').pop()
       const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
 
-      const { data, error } = await supabase.storage
+      const { data } = await supabase.storage
         .from('job-media')
         .upload(fileName, file)
 
@@ -79,7 +90,6 @@ export default function PostJobPage() {
     return uploadedUrls
   }
 
-  // 3. Submit Job Request
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -93,15 +103,28 @@ export default function PostJobPage() {
     }
 
     try {
-      // Upload media photos if attached
+      // Find selected category ID from Supabase or fallback
+      const matchedCat = categories.find(c => c.code === selectedCategoryCode)
+      const targetCategoryId = matchedCat ? matchedCat.id : null
+
+      if (!targetCategoryId) {
+        // Fallback fetch if categories array wasn't ready
+        const { data: fetchedCat } = await supabase
+          .from('categories')
+          .select('id')
+          .eq('code', selectedCategoryCode)
+          .single()
+
+        if (!fetchedCat) throw new Error('يرجى اختيار نوع الخدمة')
+      }
+
       const mediaUrls = files.length > 0 ? await uploadMediaFiles(user.id) : []
 
-      // Insert into PostgreSQL 'job_posts' table
-      const { data, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from('job_posts')
         .insert({
           customer_id: user.id,
-          category_id: categoryId,
+          category_id: targetCategoryId || categories[0]?.id,
           title: title,
           description: description,
           district: district,
@@ -112,11 +135,7 @@ export default function PostJobPage() {
           status: 'OPEN'
         })
 
-      if (insertError) {
-        setError(insertError.message)
-        setLoading(false)
-        return
-      }
+      if (insertError) throw insertError
 
       router.push('/customer/dashboard')
     } catch (err: any) {
@@ -127,9 +146,9 @@ export default function PostJobPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">
-      <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-right">
-        <h1 className="text-2xl font-bold text-blue-950 mb-2">طلب معلم / إضافة ورشة جـديدة</h1>
-        <p className="text-sm text-slate-500 mb-6">أدخل تفاصيل الشغلة للتواصل مع أفضل المعلمية القريبين منك</p>
+      <div className="max-w-3xl mx-auto bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm text-right">
+        <h1 className="text-2xl font-bold text-blue-950 mb-1">طلب معلم / إضافة ورشة جديدة</h1>
+        <p className="text-sm text-slate-500 mb-6">أختر نوع الخدمة وأدخل التفاصيل للتواصل مع أفضل المعلمية</p>
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200 text-center">
@@ -137,30 +156,45 @@ export default function PostJobPage() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Service Category */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Visual Category Selector Matching Home Page */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">نوع الخدمة / Service Category</label>
-            <select
-              value={categoryId}
-              onChange={(e) => setCategoryId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-            >
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.name_ar} ({cat.name_en})
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-bold text-slate-900 mb-3">
+              1. اختر نوع الخدمة المطلوبة / Select Trade
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {mainCategories.map((cat) => {
+                const isSelected = selectedCategoryCode === cat.code
+                return (
+                  <div
+                    key={cat.code}
+                    onClick={() => setSelectedCategoryCode(cat.code)}
+                    className={`p-4 rounded-2xl border cursor-pointer transition text-center flex flex-col items-center justify-between ${
+                      isSelected
+                        ? 'border-amber-500 bg-amber-50/60 shadow-md ring-2 ring-amber-500/20'
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}
+                  >
+                    <span className="text-3xl mb-2">{cat.icon}</span>
+                    <span className={`font-bold text-sm block ${isSelected ? 'text-amber-950' : 'text-slate-900'}`}>
+                      {cat.name_ar}
+                    </span>
+                    <span className="text-xs text-slate-500 font-medium block mt-0.5">
+                      {cat.name_en}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* Job Title */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">عنوان الطلب / Job Title</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">2. عنوان الطلب / Job Title</label>
             <input
               type="text"
               required
-              placeholder="مثال: تصليح حنفية المطبخ / تركيب مكيف 1.5 طن"
+              placeholder="مثال: تصليح حنفية المطبخ / صيانة مكيف سبليت"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
@@ -169,11 +203,11 @@ export default function PostJobPage() {
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">الوصف والتفاصيل / Description</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">3. الوصف والتفاصيل / Description</label>
             <textarea
               required
               rows={4}
-              placeholder="اشرح المشكلة بالتفصيل، مواعيد العمل المناسبة، والأغراض المتاحة عندك..."
+              placeholder="اشرح المشكلة بالتفصيل، مواعيد العمل المناسبة..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
@@ -196,7 +230,7 @@ export default function PostJobPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">البلدية / المنطقة بالتحديد (اختياري)</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">البلدية / المنطقة بالتحديد</label>
               <input
                 type="text"
                 placeholder="مثال: الحمرا / سن الفيل"
@@ -207,7 +241,7 @@ export default function PostJobPage() {
             </div>
           </div>
 
-          {/* Budget Estimate (USD) */}
+          {/* Budget Estimate */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">الميزانية المتوقعة بالدولار ($ USD)</label>
             <div className="grid grid-cols-2 gap-4">
@@ -228,9 +262,9 @@ export default function PostJobPage() {
             </div>
           </div>
 
-          {/* Media File Uploads */}
+          {/* Attachments */}
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">إرفاق صور أو فيديوهات للمشكلة (Media Attachments)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">إرفاق صور أو فيديوهات للمشكلة</label>
             <input
               type="file"
               multiple
